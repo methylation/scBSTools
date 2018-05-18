@@ -1,5 +1,6 @@
 # scBSTools
 &emsp;&emsp;scBStools(single-cell Bisulfite Sequencing Tools) is an integrated tools for comprehensive analysis of single cell bisulfite sequencing(scWGBS) reads.
+
 &emsp;&emsp;Due to the low coverage and large variation of single-cell WGBS profiles, the previous tools could not be directly used to identify the DNA methylation patterns from single-cell WGBS data. We developed a comprehensive suite (scBStools) to perform a wide variety of single-cell WGBS analysis. scBStools comprised of a serial of tools of bisulfite sequencing reads mapping and quality control, methylation ratio assessment and statistics at single-base resolution, but new advanced tools for DNA methylation patterns (under-methylated, inter-methylated and variably methylated regions) identification, annotation and heterogeneity assessment, as well as identification and clustering group analysis of DMRs for a population of single cell samples. The manuscript has been prepared.
 
 &emsp;&emsp;scBSTools has four modules:
