@@ -10,15 +10,17 @@
 
 ![workflow](https://github.com/methylation/scBSTools/blob/master/imgs/scBSTools.png "foo")
 
---
-###Install
+---
+
+### Install
 scBSTools can be used directly after decompressing. 
 ```
 unzip scBSTools-master.zip
 ```
 
---
-###Manual
+---
+
+### Manual
 
 * These are simple examples, more details please read the [scBSTools wiki]()
 
@@ -39,8 +41,9 @@ __Usage:__ Identify reference methylation patterns regions from mutiple methylom
 ```shell
 heter_assess -path ./software/scBSTools_v1.1.0/ -w wig_list.txt -o heter_assess
 ```
---
-###Using Tips
+---
+
+### Using Tips
 
 1. If you use PBS(Portable Batch System) in your cluster server, **avoid to appoint relative path** for `-o,--outdir` and other parameters which need to assign path because workspace will be changed when pbs file is submitted. 
 
@@ -50,7 +53,7 @@ More detail information in [UCSC Genome Browser: Wiggle Track Format (WIG)](http
 3. construction information
 scBSTools is contructed in `R3.1.3` and `perl v5.16.3`. 
 and scBSTools is tested in R2.x and perl v5.10.x... 
-iBSTools just employs basic funtions in `R` and `perl`. So almost all of versions of R and perl is available.
+scBSTools just employs basic funtions in `R` and `perl`. So almost all of versions of R and perl is available.
 
 4. dependence relationship
 towig is independent. Input could come from `BSMAP`,`Bismark` or ENCODE, Roadmap, TCGA.
