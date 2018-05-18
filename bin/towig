@@ -1,0 +1,355 @@
+#!/usr/bin/perl
+#--------------------------------------------------------------------------
+# This program is Copyright(C) 2015-20, Xinyu Wang (wangxinyuhs@126.com)
+#
+# This program is part of iBSTools.
+#
+# iBSTools is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# iBSTools is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with the program.  If not, see <http://www.gnu.org/licenses/>.
+#--------------------------------------------------------------------------
+
+=program flow -- modules
+	*  params control
+	1. split infile into wig file 
+	2. covert files in indir into wig file
+=cut
+
+use strict;
+use warnings;
+use Getopt::Long;
+
+our $VERSION = "1.0.0";
+
+# params control 
+my (
+	$help,
+	
+	$sample_name,		#like H1,imr90,HMec,Hcc1954 and so on
+	$infile,			#input, dir or file
+	$outdir,			#output, only directory
+	
+	$head,				#the methy files head
+	
+	$m_u,				#methylated reads , methylated reads
+	$r_t,				#methylation level , total reads
+	$m_t,				#methylated reads , total reads
+);
+my $depth_th = 5;		#default is 5
+
+GetOptions(
+	'help|man|h' => \$help,
+	
+	'n|name=s'	   => \$sample_name,
+	'i|infile=s'   => \$infile,
+	'o|outdir=s'   => \$outdir,
+	
+	'depth=s'      => \$depth_th,
+	'head!'	       => \$head,
+	
+	'm_u|methy_unmethy=s'	=> \$m_u,
+	'r_t|ratio_total=s' 	=> \$r_t,
+	'm_t|methy_total=s' 	=> \$m_t,
+);
+
+print_helpfile() if($help);
+required_args($sample_name,$infile,$outdir);
+indir_control($infile);
+outdir_control($outdir);
+
+# column control
+my ($m_col,$t_col,$u_col,$r_col) = (0,0,0,0);	#column attributes 
+if($m_t){
+	($m_col,$t_col) = split(",",$m_t);
+	($m_col,$t_col) = ($m_col-1,$t_col-1);
+}
+elsif($m_u){
+	($m_col,$u_col) = split(",",$m_u);
+	($m_col,$u_col) = ($m_col-1,$u_col-1);
+}
+elsif($r_t){
+	($r_col,$t_col) = split(",",$r_t);
+	($r_col,$t_col) = ($r_col-1,$t_col-1);
+}
+else{
+	die "Require only one option in --methy_unmethy,--ratio_total.\nPlease read the help again!\n";
+}
+
+# end control #
+
+my $out_fh_hs_ref = out_settings( $outdir , $sample_name );
+# statics:
+open STATIC,">","$outdir/$sample_name"."_sites_statics.txt";
+print STATIC "Chr\tFilter_CpGs\tdepth>=$depth_th CpGs(%)\tAverage_methy\n";
+
+# Start time
+print "\nINPUT:$infile\n";
+print "OUTPUT:$outdir\n";
+print "SAMPLE:$sample_name\n\n";
+my $time = time();
+
+print "Statics(also in $outdir/$sample_name"."_sites_statics.txt):\n";
+print "Chr\tTotal_CpGs\tdepth>=$depth_th CpGs(%)\tAverage_methy\n";
+
+my ($num,$total,$sum) = (0,0,0);
+my ($chr_col,$CpG_col) = (0,1);
+#1. split infile into wig files 
+if(!-d $infile){				#input is a file(not a dir). then split by chromosome.
+	open IN,"<",$infile or die $infile."\nPlease check up this path!\n";
+	
+	<IN> if($head);
+	my $chr = "";
+	
+	while(my $line = <IN>){
+		chomp($line);
+		next if(!$line);
+		$total ++;
+		
+		my @arr = split(/\s+/,$line);
+		my ($curChr,$CpG,$ratio,$depth) = ($arr[$chr_col],$arr[$CpG_col],0,0);
+		
+		next unless(is_chr($curChr)) ;
+		
+		if($m_u){
+			$depth = $arr[$m_col] + $arr[$u_col];
+			$ratio = $arr[$m_col]/$depth;
+		}
+		elsif($r_t){
+			$depth = $arr[$t_col];
+			$ratio = $arr[$r_col];
+		}
+		elsif($m_t){
+			$depth = $arr[$t_col];
+			$ratio = $arr[$m_col]/$depth;
+		}
+		
+		if($curChr eq $chr){  	# current chromosome
+			if($depth >= $depth_th){
+				printf { ${$out_fh_hs_ref}{"methy"} } "%s\t%.5f\n",$CpG,$ratio;
+				printf { ${$out_fh_hs_ref}{"depth"} } "%s\t%d\n",$CpG,$depth;
+				
+				$num ++;
+				$sum += $ratio;
+			}
+		}
+		else{
+			# the other chromosome, so print in another file.
+			printf STATIC "%s\t%d\t%.2f%%\t%.5f\n",$chr,$num,($num/$total)*100,($sum/$num) if($chr);
+			printf "%s\t%d\t%.2f%%\t%.5f\n",$chr,$num,($num/$total)*100,($sum/$num) if($chr);
+			
+			$chr = $curChr;
+			close OUT;
+ 
+			($num,$total,$sum) = (0,0,0);
+
+			print { ${$out_fh_hs_ref}{"methy"} } "variableStep chrom=$curChr\n";
+			print { ${$out_fh_hs_ref}{"depth"} } "variableStep chrom=$curChr\n";
+			if($depth >= $depth_th){
+				printf { ${$out_fh_hs_ref}{"methy"} } "%s\t%.5f\n",$CpG,$ratio;
+				printf { ${$out_fh_hs_ref}{"depth"} } "%s\t%d\n",$CpG,$depth;
+				
+				$num ++;
+				$sum += $ratio;
+			}
+		}
+	}
+	
+	printf STATIC "%s\t%d\t%.2f%%\t%.5f\n",$chr,$num,($num/$total)*100,($sum/$num);
+	printf "%s\t%d\t%.2f%%\t%.5f\n",$chr,$num,($num/$total)*100,($sum/$num);
+
+	close IN;
+}
+#2. covert files in indir into wig files
+else{							#input is a directory.
+	my @files = glob("$infile/*");
+	foreach my $file(@files){
+		open IN,"<",$file or die $file."\nPlease check up this path!\n";
+		<IN> if($head);
+		
+		my $line = <IN>;
+		my $chr = (split(/\s+/,$line))[0];
+		next unless(is_chr($chr)) ;
+
+		print { ${$out_fh_hs_ref}{"methy"} } "variableStep chrom=$chr\n";
+		print { ${$out_fh_hs_ref}{"depth"} } "variableStep chrom=$chr\n";
+		
+		($num,$total,$sum) = (0,0,0);
+		while($line){
+			chomp $line;
+			next if(!$line);
+			$total ++;
+			
+			my @arr = split(/\s+/,$line);
+			my ($curChr,$CpG,$ratio,$depth) = ($arr[$chr_col],$arr[$CpG_col],0,0);
+
+			if($m_u){
+				$depth = $arr[$m_col] + $arr[$u_col];
+				$ratio = $arr[$m_col]/$depth;
+			}
+			elsif($r_t){
+				$depth = $arr[$t_col];
+				$ratio = $arr[$r_col];
+			}
+			elsif($m_t){
+				$depth = $arr[$t_col];
+				$ratio = $arr[$m_col]/$depth;
+			}
+			
+			if($depth >= $depth_th){
+				printf { ${$out_fh_hs_ref}{"methy"} } "%s\t%.5f\n",$CpG,$ratio;
+				printf { ${$out_fh_hs_ref}{"depth"} } "%s\t%d\n",$CpG,$depth;
+				$num ++;
+				$sum += $ratio;
+			}
+			$line = <IN>;
+		}
+		printf STATIC "%s\t%d\t%.2f%%\t%.5f\n",$chr,$num,($num/$total)*100,($sum/$num);
+		printf "%s\t%d\t%.2f%%\t%.5f\n",$chr,$num,($num/$total)*100,($sum/$num);
+		
+		close IN;
+		close OUT;
+	}
+}
+
+close STATIC;
+print (time() - $time);
+print " seconds in total!\n";
+# End time
+
+
+=DESCRIPTION out_settings  	[ INDEPENDENT ]
+	* Name: out_settings
+	* Function: set up file handle and header of output files.
+	* Params: $outdir, $file_name,
+	* Return: \%out_fh_hs.
+	* Independence: [ INDEPENDENT ]
+=cut
+sub out_settings{
+	my ( $outdir , $sample_name ) = @_;
+
+####create file handle and set up header
+	my $methy_wig_file = "$outdir/$sample_name"."_methy.wig";
+	open my $methy_fh,">","$methy_wig_file" or die $methy_wig_file."\nPlease check up this path!\n";
+	print $methy_fh qq(track type=wiggle_0 name="$sample_name methy" visibility=full color=20,150,20 altColor=150,20,20 windowingFunction=mean\n);
+
+	my $depth_wig_file = "$outdir/$sample_name"."_depth.wig";
+	open my $depth_fh,">","$depth_wig_file" or die $depth_wig_file."\nPlease check up this path!\n";
+	print $depth_fh qq(track type=wiggle_0 name="$sample_name depth" visibility=full color=20,150,20 altColor=150,20,20 windowingFunction=mean\n);
+
+####store file handles in hash	
+	my %out_fh_hs = (
+		'methy' => $methy_fh,
+		'depth' => $depth_fh,
+		);
+
+	return \%out_fh_hs;
+}
+
+
+sub print_helpfile{
+	print qq(
+towig VERSION: $VERSION
+---------------------------------- H E L P ---------------------------------------
+"toWig" help you convert methylation files into ".wig" format which could be visualized on UCSC.
+	".wig" format is one of standard formats which iBSTools requires. 
+------------------
+USAGE:	toWig [OPTION] {-m_u <c1,c2>|-r_t <c1,c2>} [-i <file|folder>] [-o <folder>] [-n <sample name>]
+------------------
+ARGUMENTS:
+	-h,--help,--man
+				Display the helpfile.
+ OPTION:
+	--depth		
+				Depth threshold,DEFAULT:5.A site is valid when its depth is more than the threshold.
+	--head		
+				The methy files has a header.
+	
+ ##REQUIRE only one in these following two options.
+	-m_u,--methy_unmethy
+				The column of methylated counts and unmethylated counts.
+	-r_t,--ratio_total
+				The column of methylation level(from 0 to 1) and total counts(i.e. read depth).
+ I/O:
+	-n,--name
+				(REQUIRED) The sample name. like H1, IMR90 and so on. 
+	-i,--infile
+				(REQUIRED) The input methy FILE(sorted by chr). Also can be a FOLDER which has methy files splited by chromosome.
+	-o,--outdir	
+				(REQUIRED) The output FOLDER.
+------------------
+EXAMPLE:
+ BRIEF:
+	toWig --methy_unmethy 5,6 -i H1_bismark.cov -o H1_wig -n H1
+	  Split "H1_bismark.cov" into "H1_wig/" by chromosomes. Methy counts is in col 5,unmethy counts is in col 6.
+	  (H1_bismark.cov comes from BSMAP .)
+  
+ COMPREHENSIVE:
+	toWig --head --depth 8 --ratio_total 4,5 -i IMR90_bsmap.bed -o IMR90_wig -n IMR90
+	  Pick up the sites when its depth is more than 8 and convert IMR90_bsmap.bed into ".wig" files.
+	  Methy level is in col 5, total counts(i.e. depth) is in col 4.
+	  (the format of files in IMR90_bsmap comes from BSMAP .)
+ OUTPUT:
+	Two wig files for each chromosome, methylation level and depth.
+	  Methylation file will like this (chr1.wig):
+		track type=wiggle_0 name="Methylation Level" visibility=full color=20,150,20 altColor=150,20,20 windowingFunction=mean
+		variableStep chrom=chr1
+		3003660	1
+		3004613	0.87804
+		3004636	0.86956
+		
+	  Depth file will like this (Depth/chr1.wig)
+		track type=wiggle_0 name="Sequencing Depth" visibility=full color=20,150,20 altColor=150,20,20 windowingFunction=mean
+		variableStep chrom=chr1
+		3003660 37
+		3004613 13
+		3004636 17
+-------------------------------------------------------------------------------
+);
+	die "\n";
+}
+
+sub outdir_control{		#( string folder )
+	my $outdir = $_[0];
+	
+	unless(-e $outdir){	
+		mkdir $outdir or die "Can't create $outdir!\nPlease check up this path.\n";
+	}
+}
+
+sub indir_control{		#( string folder )
+	my $indir = $_[0];
+	
+	unless(-e $indir){		
+		die "$indir doesn't exist!\nPlease check up this path.\n";
+	}
+}
+
+sub required_args{		#( args1,args2,args3 ... )
+	my @arr = @_;
+	
+	foreach my $args(@arr){
+		unless($args){
+			print "Lack required arguments.\n";
+			print_helpfile();
+		}
+	}
+}
+
+sub is_chr{
+	my $str = $_[0];
+	if($str =~ /chr[1-9XY]$/ or $str =~ /chr[1-9][0-9]$/){
+		return 1;
+	}
+	else{
+		return 0;
+	}
+}
